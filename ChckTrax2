@@ -1,0 +1,100 @@
+import React, { useState, useEffect } from 'react';
+import FullCalendar from '@fullcalendar/react';
+import dayGridPlugin from '@fullcalendar/daygrid';
+import { initializeApp } from 'firebase/app';
+import { getFirestore, collection, addDoc, getDocs, updateDoc, doc } from 'firebase/firestore';
+import { getAuth, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_AUTH_DOMAIN",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_STORAGE_BUCKET",
+  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+  appId: "YOUR_APP_ID"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
+
+export default function CheckTrackingApp() {
+  const [checks, setChecks] = useState([]);
+  const [transactions, setTransactions] = useState([]);
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    async function fetchData() {
+      const checksSnapshot = await getDocs(collection(db, 'checks'));
+      setChecks(checksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+      const transactionsSnapshot = await getDocs(collection(db, 'transactions'));
+      setTransactions(transactionsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }
+    fetchData();
+  }, []);
+
+  const addTransaction = async (amount, bank) => {
+    await addDoc(collection(db, 'transactions'), { amount, bank, date: new Date().toISOString().split('T')[0] });
+  };
+
+  const markAsDeposited = async (id) => {
+    await updateDoc(doc(db, 'checks', id), { status: 'Deposited' });
+  };
+
+  const signIn = () => {
+    signInWithEmailAndPassword(auth, 'admin@example.com', 'password123')
+      .then(userCredential => setUser(userCredential.user))
+      .catch(error => alert(error.message));
+  };
+
+  const logOut = () => {
+    signOut(auth).then(() => setUser(null));
+  };
+
+  return (
+    <div className="p-4">
+      {!user ? (
+        <button onClick={signIn} className="bg-blue-500 text-white px-4 py-2 rounded">Login</button>
+      ) : (
+        <>
+          <button onClick={logOut} className="bg-red-500 text-white px-4 py-2 rounded">Logout</button>
+
+          <h1 className="text-xl font-bold mb-4">Check Tracking & Cash Management</h1>
+
+          <h2 className="text-lg font-bold">Transactions</h2>
+          <table className="table-auto w-full border">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Amount</th>
+                <th>Bank</th>
+              </tr>
+            </thead>
+            <tbody>
+              {transactions.map(tx => (
+                <tr key={tx.id} className="border">
+                  <td>{tx.date}</td>
+                  <td>₱{tx.amount}</td>
+                  <td>{tx.bank}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <h2 className="text-lg font-bold mt-6">Calendar View</h2>
+          <FullCalendar
+            plugins={[dayGridPlugin]}
+            initialView="dayGridMonth"
+            events={checks.map(check => ({
+              title: `${check.supplier} - ₱${check.amount}`,
+              date: check.date,
+              backgroundColor: check.status === 'Pending' ? '#FFEB9C' : '#A3E635'
+            }))}
+            height={500}
+          />
+        </>
+      )}
+    </div>
+  );
+}
